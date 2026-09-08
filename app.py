@@ -675,7 +675,19 @@ def set_message():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
+@app.route("/admin/clear_devices", methods=["GET"])
+def clear_devices():
+    try:
+        conn = get_db_connection('injector')
+        cur = conn.cursor()
+        cur.execute("DELETE FROM device_links;")
+        conn.commit()
+        cur.close()
+        conn.close()
+        return "SUCCESS: Lahat ng device links ay nabura na!"
+    except Exception as e:
+        return f"Error: {e}", 500
+        
 @app.route('/telegram_webhook', methods=['POST'])
 def telegram_bot():
     data = request.json
