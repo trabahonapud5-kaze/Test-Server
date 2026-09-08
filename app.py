@@ -599,22 +599,21 @@ def stats_injector(): return handle_stats("injector")
 @app.route("/extend")
 def extend_injector(): return handle_extend("injector")
 
+from flask import jsonify, request
+
 @app.route("/unregister_bot_user", methods=["GET"])
 def unregister_bot_user():
-    try:
-        identifier = request.args.get("identifier")
-        
-        # ILAGAY DITO ANG LOGIC MO PARA SA DATABASE
-        # Halimbawa: database.delete_user(identifier)
-        
-        # Siguraduhing lagi kang nagbabalik ng JSON response (Dictionary), hindi plain text
-        return {"status": "success", "message": "User cleared successfully"}
-        
-    except Exception as e:
-        # Kapag nagka-error sa loob ng server, 
-        # ito ang magpapakita sa halip na mag-crash ang buong server ng 500
-        return {"status": "error", "message": str()}, 500
-        
+    identifier = request.args.get("identifier")
+    
+    # Ilagay dito ang logic mo para burahin o linisin ang user sa database mo
+    # Halimbawa: db.delete_user(identifier)
+    
+    # Napakahalaga: Kailangan ay JSON ang return, hindi ordinaryong text!
+    return jsonify({
+        "status": "success", 
+        "message": "User uninstalled/cleared successfully"
+    })
+    
 @app.route("/script/getkey")
 def getkey_script(): return handle_getkey("script")
 @app.route("/script/customkey")
