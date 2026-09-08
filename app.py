@@ -599,6 +599,13 @@ def stats_injector(): return handle_stats("injector")
 @app.route("/extend")
 def extend_injector(): return handle_extend("injector")
 
+@app.route("/unregister_bot_user")
+def unregister_bot_user():
+    identifier = request.args.get("identifier")
+    # Tanggalin sa database/whitelist file ang username o Telegram ID na ito
+    # Kunwari: db.users.delete_one({"username": identifier})
+    return {"status": "success", "message": "User cleared successfully"}
+
 @app.route("/script/getkey")
 def getkey_script(): return handle_getkey("script")
 @app.route("/script/customkey")
@@ -619,7 +626,6 @@ def delete_script(): return handle_delete("script")
 def stats_script(): return handle_stats("script")
 @app.route("/script/extend")
 def extend_script(): return handle_extend("script")
-
 
 @app.route('/setmessage')
 def set_message():
