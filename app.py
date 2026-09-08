@@ -602,10 +602,19 @@ def extend_injector(): return handle_extend("injector")
 @app.route("/unregister_bot_user")
 def unregister_bot_user():
     identifier = request.args.get("identifier")
-    # Tanggalin sa database/whitelist file ang username o Telegram ID na ito
-    # Kunwari: db.users.delete_one({"username": identifier})
-    return {"status": "success", "message": "User cleared successfully"}
-
+    
+    # Hanapin sa database ng injector kung ang username o key na ito ay nag-e-exist
+    # user_data = db.find_user(identifier)
+    
+    if not user_data:
+        # Kapag walang nahanap, magbabalik dapat ito ng error para hindi mag-success!
+        return {"status": "error", "message": "User or Key not found in database!"}
+    
+    # Kung nahanap, burahin o i-reset dito ang access nila
+    # db.delete_or_reset(identifier)
+    
+    return {"status": "success", "message": "Cleared successfully"}
+    
 @app.route("/script/getkey")
 def getkey_script(): return handle_getkey("script")
 @app.route("/script/customkey")
