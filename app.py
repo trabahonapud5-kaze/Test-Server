@@ -603,16 +603,30 @@ from flask import jsonify, request
 
 @app.route("/unregister_bot_user", methods=["GET"])
 def unregister_bot_user():
-    identifier = request.args.get("identifier")
-    
-    # Ilagay dito ang logic mo para burahin o linisin ang user sa database mo
-    # Halimbawa: db.delete_user(identifier)
-    
-    # Napakahalaga: Kailangan ay JSON ang return, hindi ordinaryong text!
-    return jsonify({
-        "status": "success", 
-        "message": "User uninstalled/cleared successfully"
-    })
+    identifier = request.args.get("identifier", "").strip()
+    # Tanggalin ang '@' kung sinama ng user sa pag-type
+    if identifier.startswith("@"):
+        identifier = identifier[1:]
+        
+    try:
+        conn = get_db_connection('injector') # O kung aling db man
+        cur = conn.cursor()
+        
+        # Burahin sa database base sa telegram_user (o kaya ay device_id kung un ang pinasa)
+        cur.execute("DELETE FROM device_links WHERE telegram_user ILIKE %s;", (identifier,))
+        conn.commit()
+        
+        deleted_rows = cur.rowcount
+        cur.close()
+        conn.close()
+        
+        if deleted_rows > 0:
+            return {"status": "success", "message": "User unlinked successfully."}
+        else:
+            return {"status": "error", "message": "User/Device not found in database."}, 404
+            
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
     
 @app.route("/script/getkey")
 def getkey_script(): return handle_getkey("script")
