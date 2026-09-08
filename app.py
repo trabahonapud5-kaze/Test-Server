@@ -300,7 +300,6 @@ def handle_customkey(db_type):
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 def handle_verify(db_type):
     try:
         cleanup()
@@ -312,34 +311,35 @@ def handle_verify(db_type):
         conn = get_db_connection(db_type)
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
-        # 1. I-check muna kung naka-link na ang device sa Telegram bot
-        cur.execute("SELECT telegram_user FROM device_links WHERE device_id = %s;", (device,))
-        link_data = cur.fetchone()
-        telegram_user = link_data["telegram_user"] if link_data else None
-
         tag = "[SCRIPT]" if db_type == "script" else "[INJECTOR]"
 
-        if not telegram_user:
-            cur.close()
-            conn.close()
-            bot_username = "CodmInjCheckingbot"
-            bot_link = f"https://t.me/{bot_username}?start={device}"
-            # TINAWAG NA WALANG 403 SA HULI PARA HINDI MAG-EMPTY RESPONSE SA LUA
-            return jsonify({
-                "status": "link_required",
-                "message": "Please start the Telegram bot first!",
-                "bot_url": bot_link
-            })
-
-        # 2. I-check ang validity ng key pagkatapos ma-verify ang telegram
+        # 1. UNAHIN MURING ICECK KUNG TOOTOO/EXISTS ANG KEY SA DATABASE
         cur.execute("SELECT * FROM keys WHERE key_code = %s;", (key,))
         data = cur.fetchone()
 
         if not data:
             cur.close()
             conn.close()
+            # Kapag mali o peke ang key, INVALID agad ang isasagot!
             return jsonify({"status": "invalid"})
 
+        # 2. SUNOD, TSAKA PA LANG ICECK KUNG NAKA-LINK NA ANG DEVICE SA TELEGRAM
+        cur.execute("SELECT telegram_user FROM device_links WHERE device_id = %s;", (device,))
+        link_data = cur.fetchone()
+        telegram_user = link_data["telegram_user"] if link_data else None
+
+        if not telegram_user:
+            cur.close()
+            conn.close()
+            bot_username = "CodmInjCheckingbot"
+            bot_link = f"https://t.me/{bot_username}?start={device}"
+            return jsonify({
+                "status": "link_required",
+                "message": "Please start the Telegram bot first!",
+                "bot_url": bot_link
+            })
+
+        # 3. MGA SUSUNOD NA CHECKS (Custom message, revoked, expired, max devices, etc.)
         raw_message = data.get("message")
         custom_message = str(raw_message).strip() if raw_message else ""
 
@@ -439,8 +439,7 @@ def handle_verify(db_type):
             "status": "error",
             "message": f"Server Exception: {str(e)}"
         }), 500
-
-
+        
 def handle_unrevoke(db_type):
     key = request.args.get("key")
     if not key:
