@@ -311,9 +311,26 @@ def handle_verify(db_type):
         conn = get_db_connection(db_type)
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
+        # 1. I-check muna kung naka-link na ang device sa Telegram bot
+        cur.execute("SELECT telegram_user FROM device_links WHERE device_id = %s;", (device,))
+        link_data = cur.fetchone()
+        telegram_user = link_data["telegram_user"] if link_data else None
+
         tag = "[SCRIPT]" if db_type == "script" else "[INJECTOR]"
 
-        # 1. ICECK KUNG EXIST ANG KEY SA DATABASE
+        if not telegram_user:
+            cur.close()
+            conn.close()
+            bot_username = "CodmInjCheckingbot"
+            bot_link = f"https://t.me/{bot_username}?start={device}"
+            # TINAWAG NA WALANG 403 SA HULI PARA HINDI MAG-EMPTY RESPONSE SA LUA
+            return jsonify({
+                "status": "link_required",
+                "message": "Please start the Telegram bot first!",
+                "bot_url": bot_link
+            })
+
+        # 2. I-check ang validity ng key pagkatapos ma-verify ang telegram
         cur.execute("SELECT * FROM keys WHERE key_code = %s;", (key,))
         data = cur.fetchone()
 
@@ -322,23 +339,6 @@ def handle_verify(db_type):
             conn.close()
             return jsonify({"status": "invalid"})
 
-        # 2. CHECK KUNG NAKA-LINK ANG DEVICE SA TELEGRAM
-        cur.execute("SELECT telegram_user FROM device_links WHERE device_id = %s;", (device,))
-        link_data = cur.fetchone()
-        telegram_user = link_data["telegram_user"] if link_data else None
-
-        if not telegram_user:
-            cur.close()
-            conn.close()
-            bot_username = "CodmInjCheckingbot"
-            bot_link = f"https://t.me/{bot_username}?start={device}"
-            return jsonify({
-                "status": "link_required",
-                "message": "Please start the Telegram bot first!",
-                "bot_url": bot_link
-            })
-
-        # 3. IBA PANG CHECKS (CUSTOM MESSAGE / BAN)
         raw_message = data.get("message")
         custom_message = str(raw_message).strip() if raw_message else ""
 
@@ -346,16 +346,9 @@ def handle_verify(db_type):
             cur.close()
             conn.close()
             send_telegram_alert(f"🚫 *{tag} Custom Message Triggered*\nKey: `{key}`\nUser Login: `@{telegram_user}`\nMessage: `{custom_message}`")
-            
-            # PINAGBAGO DITO: Ginawa nating status: "valid" pero ang ipinapasa nating mensahe ay
-            # yung ban message. Sa ganitong paraan, i-a-allow ng app na buksan/ipakita ang message
-            # sa screen ng user bilang dialog/alert sa halip na sabihing "Invalid Key".
             return jsonify({
-                "status": "valid",
-                "expires_in_sec": 0,
-                "expire_str": "Banned",
-                "message": custom_message,
-                "telegram_user": telegram_user
+                "status": "custom",
+                "message": custom_message
             })
 
         if data["revoked"]:
