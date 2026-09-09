@@ -301,148 +301,175 @@ def handle_customkey(db_type):
         return jsonify({"status": "error", "message": str(e)}), 500
 
 def handle_verify(db_type):
-    try:
-        cleanup()
-        key = request.args.get("key")
-        device = request.args.get("device")
-        if not key or not device:
-            return jsonify({"status": "invalid", "message": "Missing key or device"}), 400
+    try:
+        cleanup()
+        key = request.args.get("key")
+        device = request.args.get("device")
+        if not key or not device:
+            return jsonify({"status": "invalid", "message": "Missing key or device"}), 400
 
-        conn = get_db_connection(db_type)
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        conn = get_db_connection(db_type)
+        cur = conn.cursor(cursor_factory=RealDictCursor)
 
-        tag = "[SCRIPT]" if db_type == "script" else "[INJECTOR]"
+        tag = "[SCRIPT]" if db_type == "script" else "[INJECTOR]"
 
-        # 1. I-check kung totoo/exists ang key sa database
-        cur.execute("SELECT * FROM keys WHERE key_code = %s;", (key,))
-        data = cur.fetchone()
+        # 1. UNAHIN MURING ICECK KUNG TOOTOO/EXISTS ANG KEY SA DATABASE
+        cur.execute("SELECT * FROM keys WHERE key_code = %s;", (key,))
+        data = cur.fetchone()
 
-        if not data:
-            cur.close()
-            conn.close()
-            return jsonify({"status": "invalid"})
+        if not data:
+            cur.close()
+            conn.close()
+            # Kapag mali o peke ang key, INVALID agad ang isasagot!
+            return jsonify({"status": "invalid"})
 
-        # 2. I-check kung naka-link na ang device sa Telegram
-        cur.execute("SELECT telegram_user FROM device_links WHERE device_id = %s;", (device,))
-        link_data = cur.fetchone()
-        telegram_user = link_data["telegram_user"] if link_data else None
+        # 2. SUNOD, TSAKA PA LANG ICECK KUNG NAKA-LINK NA ANG DEVICE SA TELEGRAM
+        cur.execute("SELECT telegram_user FROM device_links WHERE device_id = %s;", (device,))
+        link_data = cur.fetchone()
+        telegram_user = link_data["telegram_user"] if link_data else None
 
-        if not telegram_user:
-            cur.close()
-            conn.close()
-            bot_username = "CodmInjCheckingbot"
-            bot_link = f"https://t.me/{bot_username}?start={device}"
-            return jsonify({
-                "status": "link_required",
-                "message": "Please start the Telegram bot first!",
-                "bot_url": bot_link
-            })
+        if not telegram_user:
+            cur.close()
+            conn.close()
+            bot_username = "CodmInjCheckingbot"
+            bot_link = f"https://t.me/{bot_username}?start={device}"
+            return jsonify({
+                "status": "link_required",
+                "message": "Please start the Telegram bot first!",
+                "bot_url": bot_link
+            })
 
-        # 3. I-check muna ang REVOKED status (Dapat una ito bago mag-success o mag-custom message para ma-block agad)
-        is_revoked = data.get("revoked")
-        if is_revoked is True or str(is_revoked).lower() in ["true", "1", "t", "yes"]:
-            cur.close()
-            conn.close()
-            send_telegram_alert(f"❌ *{tag} Key Revoked Attempt*\nKey: `{key}`\nUser Login: `@{telegram_user}`\nDevice: `{device}`")
-            return jsonify({"status": "revoked"})
+        # 3. MGA SUSUNOD NA CHECKS (Custom message, revoked, expired, max devices, etc.)
+        raw_message = data.get("message")
+        custom_message = str(raw_message).strip() if raw_message else ""
 
-        # 4. I-check ang EXPIRED status
-        now = time.time()
-        if now > data["expiry"]:
-            cur.close()
-            conn.close()
-            send_telegram_alert(f"❌ *{tag} Key Expired Attempt*\nKey: `{key}`\nUser Login: `@{telegram_user}`\nDevice: `{device}`")
-            return jsonify({"status": "expired"})
+        if custom_message != "":
+            cur.close()
+            conn.close()
+            send_telegram_alert(f"🚫 *{tag} Custom Message Triggered*\nKey: `{key}`\nUser Login: `@{telegram_user}`\nMessage: `{custom_message}`")
+            return jsonify({
+                "status": "custom",
+                "message": custom_message
+            })
 
-        # 5. I-check ang CUSTOM MESSAGE (Pop-up message kung meron man)
-        raw_message = data.get("message")
-        custom_message = str(raw_message).strip() if raw_message else ""
+        if data["revoked"]:
+            cur.close()
+            conn.close()
+            send_telegram_alert(f"❌ *{tag} Key Revoked Attempt*\nKey: `{key}`\nUser Login: `@{telegram_user}`\nDevice: `{device}`")
+            return jsonify({"status": "revoked"})
 
-        if custom_message != "":
-            cur.close()
-            conn.close()
-            send_telegram_alert(f"🚫 *{tag} Custom Message Triggered*\nKey: `{key}`\nUser Login: `@{telegram_user}`\nMessage: `{custom_message}`")
-            return jsonify({
-                "status": "custom",
-                "message": custom_message
-            })
+        now = time.time()
+        if now > data["expiry"]:
+            cur.close()
+            conn.close()
+            send_telegram_alert(f"❌ *{tag} Key Expired Attempt*\nKey: `{key}`\nUser Login: `@{telegram_user}`\nDevice: `{device}`")
+            return jsonify({"status": "expired"})
 
-        # 6. DEVICE SLOTS AT SUCCESS LOGIC
-        current_devices = data["device"].split(",") if data["device"] else []
-        max_allowed = data.get("max_devices", 1)
-        remaining_seconds = int(data["expiry"] - now)
-        time_left_str = format_remaining(data["expiry"])
+        current_devices = data["device"].split(",") if data["device"] else []
+        max_allowed = data.get("max_devices", 1)
+        remaining_seconds = int(data["expiry"] - now)
+        time_left_str = format_remaining(data["expiry"])
 
-        tg_display = f"\nUser Login: @{telegram_user}"
+        tg_display = f"\nUser Login: @{telegram_user}"
 
-        def success_response():
-            return jsonify({
-                "status": "valid",
-                "expires_in_sec": remaining_seconds,
-                "expire_str": time_left_str,
-                "message": custom_message,
-                "telegram_user": telegram_user
-            })
+        def success_response():
+            return jsonify({
+                "status": "valid",
+                "expires_in_sec": remaining_seconds,
+                "expire_str": time_left_str,
+                "message": custom_message,
+                "telegram_user": telegram_user
+            })
 
-        if device in current_devices:
-            cur.close()
-            conn.close()
-            device_index = current_devices.index(device) + 1
-            counter_str = f" ({device_index}/{max_allowed})" if max_allowed > 1 else ""
-            send_telegram_alert(
-                f"✓ *{tag} Key Used{counter_str}*\n"
-                f"Key: `{key}`\n"
-                f"Device: `{device}`\n"
-                f"Expires in: `{time_left_str}`"
-                f"{tg_display}"
-            )
-            return success_response()
+        if device in current_devices:
+            cur.close()
+            conn.close()
+            device_index = current_devices.index(device) + 1
+            counter_str = f" ({device_index}/{max_allowed})" if max_allowed > 1 else ""
+            send_telegram_alert(
+                f"✓ *{tag} Key Used{counter_str}*\n"
+                f"Key: `{key}`\n"
+                f"Device: `{device}`\n"
+                f"Expires in: `{time_left_str}`"
+                f"{tg_display}"
+            )
+            return success_response()
 
-        if len(current_devices) < max_allowed:
-            current_devices.append(device)
-            new_device_string = ",".join(current_devices)
+        if len(current_devices) < max_allowed:
+            current_devices.append(device)
+            new_device_string = ",".join(current_devices)
 
-            cur.execute(
-                "UPDATE keys SET device = %s, login_time = %s WHERE key_code = %s;",
-                (new_device_string, now, key),
-            )
-            conn.commit()
-            cur.close()
-            conn.close()
+            cur.execute(
+                "UPDATE keys SET device = %s, login_time = %s WHERE key_code = %s;",
+                (new_device_string, now, key),
+            )
+            conn.commit()
+            cur.close()
+            conn.close()
 
-            counter_str = (
-                f" ({len(current_devices)}/{max_allowed})" if max_allowed > 1 else ""
-            )
-            send_telegram_alert(
-                f"✓ *{tag} Key Used{counter_str}*\n"
-                f"Key: `{key}`\n"
-                f"Device: `{device}`\n"
-                f"Expires in: `{time_left_str}`"
-                f"{tg_display}"
-            )
-            return success_response()
+            counter_str = (
+                f" ({len(current_devices)}/{max_allowed})" if max_allowed > 1 else ""
+            )
+            send_telegram_alert(
+                f"✓ *{tag} Key Used{counter_str}*\n"
+                f"Key: `{key}`\n"
+                f"Device: `{device}`\n"
+                f"Expires in: `{time_left_str}`"
+                f"{tg_display}"
+            )
+            return success_response()
 
-        cur.close()
-        conn.close()
-        send_telegram_alert(
-            f"🔒 *{tag} Max Device Limit Reached*\n"
-            f"Key: `{key}`\n"
-            f"User Login: `@{telegram_user}`\n"
-            f"Attempt Device: `{device}`\n"
-            f"Slots: `{len(current_devices)}/{max_allowed}`"
-        )
-        return jsonify({"status": "locked"})
+        cur.close()
+        conn.close()
+        send_telegram_alert(
+            f"🔒 *{tag} Max Device Limit Reached*\n"
+            f"Key: `{key}`\n"
+            f"User Login: `@{telegram_user}`\n"
+            f"Attempt Device: `{device}`\n"
+            f"Slots: `{len(current_devices)}/{max_allowed}`"
+        )
+        return jsonify({"status": "locked"})
 
-    except Exception as e:
-        print("-----------------------------------------")
-        print("CRASH ERROR SA /verify:")
-        traceback.print_exc()
-        print("-----------------------------------------")
-        return jsonify({
-            "status": "error",
-            "message": f"Server Exception: {str(e)}"
-        }), 500
-
+    except Exception as e:
+        print("-----------------------------------------")
+        print("CRASH ERROR SA /verify:")
+        traceback.print_exc()
+        print("-----------------------------------------")
+        return jsonify({
+            "status": "error",
+            "message": f"Server Exception: {str(e)}"
+        }), 500
+        
+def handle_unrevoke(db_type):
+    key = request.args.get("key")
+    if not key:
+        return jsonify({"status": "error", "message": "Missing key"}), 400
+    try:
+        conn = get_db_connection(db_type)
+        cur = conn.cursor()
+        cur.execute("UPDATE keys SET revoked = FALSE WHERE key_code = %s;", (key,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+        
+def handle_unrevoke(db_type):
+    key = request.args.get("key")
+    if not key:
+        return jsonify({"status": "error", "message": "Missing key"}), 400
+    try:
+        conn = get_db_connection(db_type)
+        cur = conn.cursor()
+        cur.execute("UPDATE keys SET revoked = FALSE WHERE key_code = %s;", (key,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+        
 def handle_revoke(db_type):
     key = request.args.get("key")
     if not key:
