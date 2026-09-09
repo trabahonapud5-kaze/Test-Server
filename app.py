@@ -339,7 +339,7 @@ def handle_verify(db_type):
                 "bot_url": bot_link
             })
 
-        # 3. IBA PANG CHECKS
+# 3. IBA PANG CHECKS
         raw_message = data.get("message")
         custom_message = str(raw_message).strip() if raw_message else ""
 
@@ -347,8 +347,9 @@ def handle_verify(db_type):
             cur.close()
             conn.close()
             send_telegram_alert(f"🚫 *{tag} Custom Message Triggered*\nKey: `{key}`\nUser Login: `@{telegram_user}`\nMessage: `{custom_message}`")
+            # Binago natin ang 'status' para maging 'error' o direktang basahin ng app mo
             return jsonify({
-                "status": "custom",
+                "status": "error",
                 "message": custom_message
             })
 
