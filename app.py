@@ -439,6 +439,21 @@ def handle_verify(db_type):
             "status": "error",
             "message": f"Server Exception: {str(e)}"
         }), 500
+
+def handle_revoke(db_type):
+    key = request.args.get("key")
+    if not key:
+        return jsonify({"status": "error", "message": "Missing key"}), 400
+    try:
+        conn = get_db_connection(db_type)
+        cur = conn.cursor()
+        cur.execute("UPDATE keys SET revoked = TRUE WHERE key_code = %s;", (key,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
         
 def handle_unrevoke(db_type):
     key = request.args.get("key")
