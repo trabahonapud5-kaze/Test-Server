@@ -301,23 +301,7 @@ def handle_customkey(db_type):
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-        
-def handle_unrevoke(db_type):
-    key = request.args.get("key")
-    if not key:
-        return jsonify({"status": "error", "message": "Missing key"}), 400
-    try:
-        conn = get_db_connection(db_type)
-        cur = conn.cursor()
-        cur.execute("UPDATE keys SET revoked = FALSE WHERE key_code = %s;", (key,))
-        conn.commit()
-        cur.close()
-        conn.close()
-        return jsonify({"status": "success"})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-        
-def handle_udef handle_verify(db_type):
+def handle_verify(db_type):
     try:
         cleanup()
         key = request.args.get("key")
@@ -330,17 +314,16 @@ def handle_udef handle_verify(db_type):
 
         tag = "[SCRIPT]" if db_type == "script" else "[INJECTOR]"
 
-        # 1. UNAHIN MURING ICECK KUNG TOOTOO/EXISTS ANG KEY SA DATABASE
+        # 1. ICECK KUNG EXIST ANG KEY SA DATABASE
         cur.execute("SELECT * FROM keys WHERE key_code = %s;", (key,))
         data = cur.fetchone()
 
         if not data:
             cur.close()
             conn.close()
-            # Kapag mali o peke ang key, INVALID agad ang isasagot!
             return jsonify({"status": "invalid"})
 
-        # 2. SUNOD, TSAKA PA LANG ICECK KUNG NAKA-LINK NA ANG DEVICE SA TELEGRAM
+        # 2. CHECK KUNG NAKA-LINK ANG DEVICE SA TELEGRAM
         cur.execute("SELECT telegram_user FROM device_links WHERE device_id = %s;", (device,))
         link_data = cur.fetchone()
         telegram_user = link_data["telegram_user"] if link_data else None
@@ -356,7 +339,7 @@ def handle_udef handle_verify(db_type):
                 "bot_url": bot_link
             })
 
-        # 3. MGA SUSUNOD NA CHECKS (Custom message, revoked, expired, max devices, etc.)
+        # 3. IBA PANG CHECKS
         raw_message = data.get("message")
         custom_message = str(raw_message).strip() if raw_message else ""
 
@@ -455,22 +438,9 @@ def handle_udef handle_verify(db_type):
         return jsonify({
             "status": "error",
             "message": f"Server Exception: {str(e)}"
-        }), 500nrevoke(db_type):
-        
-    key = request.args.get("key")
-    if not key:
-        return jsonify({"status": "error", "message": "Missing key"}), 400
-    try:
-        conn = get_db_connection(db_type)
-        cur = conn.cursor()
-        cur.execute("UPDATE keys SET revoked = FALSE WHERE key_code = %s;", (key,))
-        conn.commit()
-        cur.close()
-        conn.close()
-        return jsonify({"status": "success"})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-        
+        }), 500
+
+
 def handle_revoke(db_type):
     key = request.args.get("key")
     if not key:
@@ -485,6 +455,7 @@ def handle_revoke(db_type):
         return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+        
         
 def handle_unrevoke(db_type):
     key = request.args.get("key")
@@ -644,20 +615,16 @@ def stats_injector(): return handle_stats("injector")
 @app.route("/extend")
 def extend_injector(): return handle_extend("injector")
 
-from flask import jsonify, request
-
 @app.route("/unregister_bot_user", methods=["GET"])
 def unregister_bot_user():
     identifier = request.args.get("identifier", "").strip()
-    # Tanggalin ang '@' kung sinama ng user sa pag-type
     if identifier.startswith("@"):
         identifier = identifier[1:]
         
     try:
-        conn = get_db_connection('injector') # O kung aling db man
+        conn = get_db_connection('injector')
         cur = conn.cursor()
         
-        # Burahin sa database base sa telegram_user (o kaya ay device_id kung un ang pinasa)
         cur.execute("DELETE FROM device_links WHERE telegram_user ILIKE %s;", (identifier,))
         conn.commit()
         
