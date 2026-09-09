@@ -300,7 +300,6 @@ def handle_customkey(db_type):
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 def handle_verify(db_type):
     try:
         cleanup()
@@ -339,7 +338,7 @@ def handle_verify(db_type):
                 "bot_url": bot_link
             })
 
-# 3. IBA PANG CHECKS
+        # 3. IBA PANG CHECKS (CUSTOM MESSAGE / BAN)
         raw_message = data.get("message")
         custom_message = str(raw_message).strip() if raw_message else ""
 
@@ -347,10 +346,16 @@ def handle_verify(db_type):
             cur.close()
             conn.close()
             send_telegram_alert(f"🚫 *{tag} Custom Message Triggered*\nKey: `{key}`\nUser Login: `@{telegram_user}`\nMessage: `{custom_message}`")
-            # Binago natin ang 'status' para maging 'error' o direktang basahin ng app mo
+            
+            # PINAGBAGO DITO: Ginawa nating status: "valid" pero ang ipinapasa nating mensahe ay
+            # yung ban message. Sa ganitong paraan, i-a-allow ng app na buksan/ipakita ang message
+            # sa screen ng user bilang dialog/alert sa halip na sabihing "Invalid Key".
             return jsonify({
-                "status": "error",
-                "message": custom_message
+                "status": "valid",
+                "expires_in_sec": 0,
+                "expire_str": "Banned",
+                "message": custom_message,
+                "telegram_user": telegram_user
             })
 
         if data["revoked"]:
@@ -440,8 +445,7 @@ def handle_verify(db_type):
             "status": "error",
             "message": f"Server Exception: {str(e)}"
         }), 500
-
-
+        
 def handle_revoke(db_type):
     key = request.args.get("key")
     if not key:
