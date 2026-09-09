@@ -486,6 +486,22 @@ def handle_reset(db_type):
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/reset-all-keys", methods=["GET"])
+def handle_reset_all():
+    try:
+        # Palitan ang "sqlite" o ang database connection mo kung kinakailangan
+        conn = get_db_connection("sqlite") 
+        cur = conn.cursor()
+        
+        # I-reset ang lahat ng device at login_time para sa bawat key
+        cur.execute("UPDATE keys SET device = NULL, login_time = NULL;")
+        conn.commit()
+        
+        cur.close()
+        conn.close()
+        return jsonify({"status": "success", "message": "All keys have been reset successfully!"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 def handle_list(db_type):
     try:
