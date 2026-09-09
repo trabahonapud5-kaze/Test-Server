@@ -313,17 +313,16 @@ def handle_verify(db_type):
 
         tag = "[SCRIPT]" if db_type == "script" else "[INJECTOR]"
 
-        # 1. UNAHIN MURING ICECK KUNG TOOTOO/EXISTS ANG KEY SA DATABASE
+        # 1. I-check kung totoo/exists ang key sa database
         cur.execute("SELECT * FROM keys WHERE key_code = %s;", (key,))
         data = cur.fetchone()
 
         if not data:
             cur.close()
             conn.close()
-            # Kapag mali o peke ang key, INVALID agad ang isasagot!
             return jsonify({"status": "invalid"})
 
-        # 2. SUNOD, TSAKA PA LANG ICECK KUNG NAKA-LINK NA ANG DEVICE SA TELEGRAM
+        # 2. I-check kung naka-link na ang device sa Telegram
         cur.execute("SELECT telegram_user FROM device_links WHERE device_id = %s;", (device,))
         link_data = cur.fetchone()
         telegram_user = link_data["telegram_user"] if link_data else None
@@ -339,7 +338,23 @@ def handle_verify(db_type):
                 "bot_url": bot_link
             })
 
-        # 3. MGA SUSUNOD NA CHECKS (Custom message, revoked, expired, max devices, etc.)
+        # 3. I-check muna ang REVOKED status (Dapat una ito bago mag-success o mag-custom message para ma-block agad)
+        is_revoked = data.get("revoked")
+        if is_revoked is True or str(is_revoked).lower() in ["true", "1", "t", "yes"]:
+            cur.close()
+            conn.close()
+            send_telegram_alert(f"❌ *{tag} Key Revoked Attempt*\nKey: `{key}`\nUser Login: `@{telegram_user}`\nDevice: `{device}`")
+            return jsonify({"status": "revoked"})
+
+        # 4. I-check ang EXPIRED status
+        now = time.time()
+        if now > data["expiry"]:
+            cur.close()
+            conn.close()
+            send_telegram_alert(f"❌ *{tag} Key Expired Attempt*\nKey: `{key}`\nUser Login: `@{telegram_user}`\nDevice: `{device}`")
+            return jsonify({"status": "expired"})
+
+        # 5. I-check ang CUSTOM MESSAGE (Pop-up message kung meron man)
         raw_message = data.get("message")
         custom_message = str(raw_message).strip() if raw_message else ""
 
@@ -352,19 +367,7 @@ def handle_verify(db_type):
                 "message": custom_message
             })
 
-        if data["revoked"]:
-            cur.close()
-            conn.close()
-            send_telegram_alert(f"❌ *{tag} Key Revoked Attempt*\nKey: `{key}`\nUser Login: `@{telegram_user}`\nDevice: `{device}`")
-            return jsonify({"status": "revoked"})
-
-        now = time.time()
-        if now > data["expiry"]:
-            cur.close()
-            conn.close()
-            send_telegram_alert(f"❌ *{tag} Key Expired Attempt*\nKey: `{key}`\nUser Login: `@{telegram_user}`\nDevice: `{device}`")
-            return jsonify({"status": "expired"})
-
+        # 6. DEVICE SLOTS AT SUCCESS LOGIC
         current_devices = data["device"].split(",") if data["device"] else []
         max_allowed = data.get("max_devices", 1)
         remaining_seconds = int(data["expiry"] - now)
