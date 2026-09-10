@@ -23,8 +23,13 @@ COOLDOWN_LIMIT = 5
 
 db_cache = {"tokens": {}, "device_limit": {}, "daily_limit": {}}
 
+# Login Notification Bot (Existing)
 TELEGRAM_BOT_TOKEN = os.getenv("BOT_TOKEN")
 OWNER_ID = os.getenv("OWNER_ID")
+
+# Register Notification Bot (New)
+REGISTER_BOT_TOKEN = "8848387971:AAHk5zM22c_CHYPhOH6Ks35bb90J5uUyTww"
+REGISTER_OWNER_ID = "7201369115"
 
 DB_URL_INJECTOR = os.getenv("DATABASE_URL_INJECTOR") or os.getenv("DATABASE_URL")
 DB_URL_SCRIPT = os.getenv("DATABASE_URL_SCRIPT")
@@ -103,6 +108,21 @@ def send_telegram_alert(message: str):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": OWNER_ID,
+        "text": message,
+        "parse_mode": "Markdown",
+    }
+    try:
+        requests.post(url, data=payload, timeout=5)
+    except Exception:
+        pass
+
+
+def send_register_alert(message: str):
+    if not REGISTER_BOT_TOKEN or not REGISTER_OWNER_ID:
+        return
+    url = f"https://api.telegram.org/bot{REGISTER_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": REGISTER_OWNER_ID,
         "text": message,
         "parse_mode": "Markdown",
     }
@@ -314,7 +334,8 @@ def handle_verify(db_type):
         cur.execute("SELECT * FROM device_links WHERE device_id = %s;", (device,))
         link_data = cur.fetchone()
 
-        bot_username = "CodmInjCheckingbot"
+        # Dito nakaturo sa bagong bot ang verification/linking link kapag wala pa sila nito
+        bot_username = "KazeRegisterBot"
         bot_link = f"https://t.me/{bot_username}?start={device}"
 
         if not link_data or not link_data.get("chat_id"):
@@ -329,12 +350,11 @@ def handle_verify(db_type):
         chat_id = link_data["chat_id"]
         stored_user = link_data["telegram_user"]
 
-        # I-normalize ang stored user para sa paghahambing (tanggalin ang @ at gawing lowercase)
         normalized_stored = stored_user.lstrip('@').lower() if stored_user else ""
         current_telegram_user = normalized_stored
 
         try:
-            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getChat?chat_id={chat_id}"
+            url = f"https://api.telegram.org/bot{REGISTER_BOT_TOKEN}/getChat?chat_id={chat_id}"
             resp = requests.get(url, timeout=3).json()
             if resp.get("ok"):
                 live_user = resp["result"].get("username")
@@ -343,9 +363,7 @@ def handle_verify(db_type):
         except Exception:
             pass
 
-        # Kung hindi nagsisimula sa tg:// (ibig sabihin ay may username siya dati)
         if not stored_user.startswith("tg://"):
-            # Kung nagbago ang username, i-update na lang sa database sa halip na i-delete
             if current_telegram_user != normalized_stored and 'live_user' in locals() and live_user:
                 new_identifier = f"@{live_user}"
                 cur.execute("UPDATE device_links SET telegram_user = %s WHERE device_id = %s;", (new_identifier, device))
@@ -354,19 +372,15 @@ def handle_verify(db_type):
 
         telegram_user = stored_user
 
-       # ---- ILAGAY DITO ANG HELPER LOGIC ----
         if telegram_user.startswith("tg://"):
-            # Para sa mga WALANG username (May User ID sa ibaba na naka-mono)
             user_id_num = telegram_user.split("=")[-1]
             user_line = (
                 f"👤 User Login: [Open Chat](tg://openmessage?user_id={user_id_num})\n"
                 f"┃  🆔 User ID: `{user_id_num}`"
             )
         else:
-            # Para sa mga MAY username (Isang linya lang, walang extra sa baba)
             clean_username = telegram_user.lstrip('@')
             user_line = f"👤 User Login: [@{clean_username}](https://t.me/{clean_username})"
-        # ---------------------------------------
             
         cur.execute("SELECT * FROM keys WHERE key_code = %s;", (key,))
         data = cur.fetchone()
@@ -582,7 +596,6 @@ def handle_reset_all():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 def handle_list(db_type):
     try:
         status_filter = request.args.get("status", "active")
@@ -720,18 +733,15 @@ def unregister_bot_user():
         cur = conn.cursor()
         
         if identifier.isdigit():
-            # Kung ang binigay ay puro numero (User ID), hahanapin nito sa tg:// format o eksaktong ID
             link_pattern = f"%user_id={identifier}%"
             cur.execute(
                 "DELETE FROM device_links WHERE telegram_user LIKE %s OR telegram_user = %s;", 
                 (link_pattern, identifier)
             )
         else:
-            # Kung ito ay username, tatanggalin muna ang '@' kung meron man para sigurado
             clean_username = identifier.lstrip('@')
             username_pattern = f"%{clean_username}%"
             
-            # Hahanapin nito pati na rin ang mga nakatagong tg:// o may @ sa database
             cur.execute(
                 "DELETE FROM device_links WHERE telegram_user ILIKE %s OR telegram_user ILIKE %s;", 
                 (username_pattern, f"@{clean_username}")
@@ -795,7 +805,7 @@ def set_message():
         conn.close()
         return jsonify({"status": "success", "message": "Custom message updated successfully!"})
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({"status": "error", "message": str(e)}, 500)
 
 @app.route("/admin/clear_devices", methods=["GET"])
 def clear_devices():
@@ -810,8 +820,12 @@ def clear_devices():
     except Exception as e:
         return f"Error: {e}", 500
 
-@app.route('/telegram_webhook', methods=['POST'])
-def telegram_bot():
+
+# ======================
+# NEW REGISTRATION WEBHOOK (Para sa @KazeRegisterBot)
+# ======================
+@app.route('/register_webhook', methods=['POST'])
+def register_bot():
     data = request.json
     if not data:
         return "OK", 200
@@ -824,12 +838,14 @@ def telegram_bot():
         
         username = user_info.get("username")
         user_id = user_info.get("id")
+        first_name = user_info.get("first_name", "User")
         
-        # PRIORITY LOGIC: Username kung meron, tg:// link kung wala
         if username:
             telegram_identifier = f"@{username}"
+            display_user = f"[@{username}](https://t.me/{username})"
         else:
             telegram_identifier = f"tg://openmessage?user_id={user_id}"
+            display_user = f"[Open Chat](tg://openmessage?user_id={user_id})\n┃  🆔 User ID: `{user_id}`"
 
         if msg_text.startswith("/start"):
             parts = msg_text.split(" ")
@@ -851,9 +867,17 @@ def telegram_bot():
                     conn.close()
                 except Exception as e:
                     print(f"Link error: {e}")
+
+                # Magpapadala ng notification sa bagong bot mo papunta sa private chat mo
+                send_register_alert(
+                    f"NEW TELEGRAM REGISTER:\n"
+                    f"USERNAME: {display_user}\n"
+                    f"USER ID: `{user_id}`\n"
+                    f"Device ID: `{device_id}`"
+                )
             
-            reply_text = "Success!"
-            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+            reply_text = "Success! Naka-register na ang iyong device."
+            url = f"https://api.telegram.org/bot{REGISTER_BOT_TOKEN}/sendMessage"
             payload = {
                 "chat_id": chat_id,
                 "text": reply_text,
@@ -863,53 +887,8 @@ def telegram_bot():
             except Exception:
                 pass
 
-        elif msg_text.startswith("/unblockmess"):
-            parts = msg_text.split(" ")
-            if len(parts) > 1:
-                target_key = parts[1].strip()
-                db_type = request.args.get('db_type', 'injector')
-                
-                try:
-                    conn = get_db_connection(db_type)
-                    cur = conn.cursor()
-                    cur.execute("UPDATE keys SET message = NULL WHERE key_code = %s;", (target_key,))
-                    conn.commit()
-                    
-                    if cur.rowcount > 0:
-                        reply_text = f"✅ *Successfully unblocked/cleared custom message for key:*\n`{target_key}`\n\nGagana na ulit ito bilang regular valid key!"
-                    else:
-                        reply_text = f"❌ *Key not found in database:* `{target_key}`"
-                    
-                    cur.close()
-                    conn.close()
-                except Exception as e:
-                    reply_text = f"❌ *Database Error:* {str(e)}"
-                
-                url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-                payload = {
-                    "chat_id": chat_id,
-                    "text": reply_text,
-                    "parse_mode": "Markdown",
-                }
-                try:
-                    requests.post(url, data=payload, timeout=5)
-                except Exception:
-                    pass
-            else:
-                url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-                payload = {
-                    "chat_id": chat_id,
-                    "text": "⚠️ *Usage:* `/unblockmess <iyong_key>`",
-                    "parse_mode": "Markdown",
-                }
-                try:
-                    requests.post(url, data=payload, timeout=5)
-                except Exception:
-                    pass
-                    
     return "OK", 200
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
