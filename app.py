@@ -354,10 +354,10 @@ def handle_verify(db_type):
 
         telegram_user = stored_user
 
-        # ---- ILAGAY DITO ANG HELPER LOGIC ----
+       # ---- ILAGAY DITO ANG HELPER LOGIC ----
         if telegram_user.startswith("tg://"):
-            user_id_num = telegram_user.split("=")[-1]
-            user_line = f"👤 User Login ID: `{user_id_num}`"
+            # Kung buong link ang gusto mong lumabas sa alert
+            user_line = f"👤 User Login: `{telegram_user}`"
         else:
             # Linisin muna ang @ kung meron man para hindi maging doble
             clean_username = telegram_user.lstrip('@')
