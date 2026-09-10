@@ -311,26 +311,21 @@ def handle_verify(db_type):
         conn = get_db_connection(db_type)
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
-        # 1. I-check muna kung naka-link na ang device sa Telegram bot
         cur.execute("SELECT telegram_user FROM device_links WHERE device_id = %s;", (device,))
         link_data = cur.fetchone()
-        telegram_user = link_data["telegram_user"] if link_data else None
+        telegram_user = link_data["telegram_user"] if link_data else "Unknown"
 
-        tag = "[SCRIPT]" if db_type == "script" else "[INJECTOR]"
-
-        if not telegram_user:
+        if not link_data or not link_data.get("telegram_user"):
             cur.close()
             conn.close()
             bot_username = "CodmInjCheckingbot"
             bot_link = f"https://t.me/{bot_username}?start={device}"
-            # TINAWAG NA WALANG 403 SA HULI PARA HINDI MAG-EMPTY RESPONSE SA LUA
             return jsonify({
                 "status": "link_required",
                 "message": "Please start the Telegram bot first!",
                 "bot_url": bot_link
             })
 
-        # 2. I-check ang validity ng key pagkatapos ma-verify ang telegram
         cur.execute("SELECT * FROM keys WHERE key_code = %s;", (key,))
         data = cur.fetchone()
 
@@ -342,34 +337,62 @@ def handle_verify(db_type):
         raw_message = data.get("message")
         custom_message = str(raw_message).strip() if raw_message else ""
 
+        # 1. Custom Message Triggered
         if custom_message != "":
             cur.close()
             conn.close()
-            send_telegram_alert(f"🚫 *{tag} Custom Message Triggered*\nKey: `{key}`\nUser Login: `@{telegram_user}`\nMessage: `{custom_message}`")
-            return jsonify({
-                "status": "custom",
-                "message": custom_message
-            })
+            send_telegram_alert(
+                f"╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"┃  🚫 𝗖𝗨𝗦𝗧𝗢𝗠 𝗠𝗘𝗦𝗦𝗔𝗚𝗘\n"
+                f"┃  ━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"┃  🔑 Key: `{key}`\n"
+                f"┃  💬 Message: {custom_message}\n"
+                f"┃  ━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"┃  👤 User Login: @{telegram_user}\n"
+                f"┃  ⚡ 𝗠𝗘𝗦𝗦𝗔𝗚𝗘 𝗧𝗥𝗜𝗚𝗚𝗘𝗥𝗘𝗗\n"
+                f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            )
+            return jsonify({"status": "custom", "message": custom_message})
 
+        # 2. Key Revoked Attempt
         if data["revoked"]:
             cur.close()
             conn.close()
-            send_telegram_alert(f"❌ *{tag} Key Revoked Attempt*\nKey: `{key}`\nUser Login: `@{telegram_user}`\nDevice: `{device}`")
+            send_telegram_alert(
+                f"╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"┃  🚫 𝗞𝗘𝗬 𝗥𝗘𝗩𝗢𝗞𝗘𝗗\n"
+                f"┃  ━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"┃  🔑 Key: `{key}`\n"
+                f"┃  📱 Device: {device}\n"
+                f"┃  ━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"┃  👤 User Login: @{telegram_user}\n"
+                f"┃  🔴 𝗔𝗖𝗖𝗘𝗦𝗦 𝗗𝗘𝗡𝗜𝗘𝗗\n"
+                f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            )
             return jsonify({"status": "revoked"})
 
+        # 3. Key Expired Attempt
         now = time.time()
         if now > data["expiry"]:
             cur.close()
             conn.close()
-            send_telegram_alert(f"❌ *{tag} Key Expired Attempt*\nKey: `{key}`\nUser Login: `@{telegram_user}`\nDevice: `{device}`")
+            send_telegram_alert(
+                f"╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"┃  ❌ 𝗞𝗘𝗬 𝗘𝗫𝗣𝗜𝗥𝗘𝗗\n"
+                f"┃  ━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"┃  🔑 Key: `{key}`\n"
+                f"┃  📱 Device: {device}\n"
+                f"┃  ━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"┃  👤 User Login: @{telegram_user}\n"
+                f"┃  🔴 𝗔𝗖𝗖𝗘𝗦𝗦 𝗗𝗘𝗡𝗜𝗘𝗗\n"
+                f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            )
             return jsonify({"status": "expired"})
 
         current_devices = data["device"].split(",") if data["device"] else []
         max_allowed = data.get("max_devices", 1)
         remaining_seconds = int(data["expiry"] - now)
         time_left_str = format_remaining(data["expiry"])
-
-        tg_display = f"\nUser Login: @{telegram_user}"
 
         def success_response():
             return jsonify({
@@ -380,20 +403,27 @@ def handle_verify(db_type):
                 "telegram_user": telegram_user
             })
 
+        # 4. Login Successful (Existing Device)
         if device in current_devices:
             cur.close()
             conn.close()
             device_index = current_devices.index(device) + 1
             counter_str = f" ({device_index}/{max_allowed})" if max_allowed > 1 else ""
             send_telegram_alert(
-                f"✓ *{tag} Key Used{counter_str}*\n"
-                f"Key: `{key}`\n"
-                f"Device: `{device}`\n"
-                f"Expires in: `{time_left_str}`"
-                f"{tg_display}"
+                f"╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"┃  ✓ 𝗟𝗢𝗚𝗜𝗡 𝗦𝗨𝗖𝗖𝗘𝗦𝗦𝗙𝗨𝗟{counter_str}\n"
+                f"┃  ━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"┃  🔑 Key: `{key}`\n"
+                f"┃  📱 Device: {device}\n"
+                f"┃  ⏳ Expires in: {time_left_str}\n"
+                f"┃  ━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"┃  👤 User Login: @{telegram_user}\n"
+                f"┃  🟢 𝗔𝗖𝗖𝗘𝗦𝗦 𝗚𝗥𝗔𝗡𝗧𝗘𝗗\n"
+                f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             )
             return success_response()
 
+        # 5. Login Successful (New Device Slot)
         if len(current_devices) < max_allowed:
             current_devices.append(device)
             new_device_string = ",".join(current_devices)
@@ -406,26 +436,35 @@ def handle_verify(db_type):
             cur.close()
             conn.close()
 
-            counter_str = (
-                f" ({len(current_devices)}/{max_allowed})" if max_allowed > 1 else ""
-            )
+            counter_str = f" ({len(current_devices)}/{max_allowed})" if max_allowed > 1 else ""
             send_telegram_alert(
-                f"✓ *{tag} Key Used{counter_str}*\n"
-                f"Key: `{key}`\n"
-                f"Device: `{device}`\n"
-                f"Expires in: `{time_left_str}`"
-                f"{tg_display}"
+                f"╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"┃  ✓ 𝗟𝗢𝗚𝗜𝗡 𝗦𝗨𝗖𝗖𝗘𝗦𝗦𝗙𝗨𝗟{counter_str}\n"
+                f"┃  ━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"┃  🔑 Key: `{key}`\n"
+                f"┃  📱 Device: {device}\n"
+                f"┃  ⏳ Expires in: {time_left_str}\n"
+                f"┃  ━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"┃  👤 User Login: @{telegram_user}\n"
+                f"┃  🟢 𝗔𝗖𝗖𝗘𝗦𝗦 𝗚𝗥𝗔𝗡𝗧𝗘𝗗\n"
+                f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             )
             return success_response()
 
+        # 6. Max Device Limit Reached
         cur.close()
         conn.close()
         send_telegram_alert(
-            f"🔒 *{tag} Max Device Limit Reached*\n"
-            f"Key: `{key}`\n"
-            f"User Login: `@{telegram_user}`\n"
-            f"Attempt Device: `{device}`\n"
-            f"Slots: `{len(current_devices)}/{max_allowed}`"
+            f"╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"┃  ⚠️ 𝗠𝗔𝗫 𝗗𝗘𝗩𝗜𝗖𝗘 𝗟𝗜𝗠𝗜𝗧\n"
+            f"┃  ━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"┃  🔑 Key: `{key}`\n"
+            f"┃  📱 Attempt Device: {device}\n"
+            f"┃  💻 Device Slots: {len(current_devices)}/{max_allowed}\n"
+            f"┃  ━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"┃  👤 User Login: @{telegram_user}\n"
+            f"┃  🔴 𝗔𝗖𝗖𝗘𝗦𝗦 𝗗𝗘𝗡𝗜𝗘𝗗\n"
+            f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         )
         return jsonify({"status": "locked"})
 
@@ -453,7 +492,6 @@ def handle_revoke(db_type):
         return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-        
         
 def handle_unrevoke(db_type):
     key = request.args.get("key")
@@ -489,14 +527,10 @@ def handle_reset(db_type):
 @app.route("/reset-all-keys", methods=["GET"])
 def handle_reset_all():
     try:
-        # Palitan ang "sqlite" o ang database connection mo kung kinakailangan
-        conn = get_db_connection("sqlite") 
+        conn = get_db_connection("injector") 
         cur = conn.cursor()
-        
-        # I-reset ang lahat ng device at login_time para sa bawat key
         cur.execute("UPDATE keys SET device = NULL, login_time = NULL;")
         conn.commit()
-        
         cur.close()
         conn.close()
         return jsonify({"status": "success", "message": "All keys have been reset successfully!"})
