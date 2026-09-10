@@ -701,14 +701,28 @@ def extend_injector(): return handle_extend("injector")
 @app.route("/unregister_bot_user", methods=["GET"])
 def unregister_bot_user():
     identifier = request.args.get("identifier", "").strip()
-    if identifier.startswith("@"):
-        identifier = identifier[1:]
-        
+    
+    if not identifier:
+        return {"status": "error", "message": "Missing identifier"}, 400
+
+    # Kung numero lang ang binigay (walang @), ibig sabihin ito ay User ID
+    if identifier.isdigit():
+        search_pattern = f"%user_id={identifier}%"
+    else:
+        if identifier.startswith("@"):
+            identifier = identifier[1:]
+        search_pattern = identifier
+
     try:
         conn = get_db_connection('injector')
         cur = conn.cursor()
         
-        cur.execute("DELETE FROM device_links WHERE telegram_user ILIKE %s;", (identifier,))
+        # Kung digit, gagamit ng LIKE para mahanap sa loob ng tg:// link, kung hindi ay ILIKE para sa username
+        if identifier.isdigit():
+            cur.execute("DELETE FROM device_links WHERE telegram_user LIKE %s;", (search_pattern,))
+        else:
+            cur.execute("DELETE FROM device_links WHERE telegram_user ILIKE %s;", (search_pattern,))
+            
         conn.commit()
         
         deleted_rows = cur.rowcount
@@ -716,13 +730,13 @@ def unregister_bot_user():
         conn.close()
         
         if deleted_rows > 0:
-            return {"status": "success", "message": "User unlinked successfully."}
+            return {"status": "success", "message": f"User {identifier} unlinked successfully."}
         else:
             return {"status": "error", "message": "User/Device not found in database."}, 404
             
     except Exception as e:
         return {"status": "error", "message": str(e)}, 500
-    
+        
 @app.route("/script/getkey")
 def getkey_script(): return handle_getkey("script")
 @app.route("/script/customkey")
