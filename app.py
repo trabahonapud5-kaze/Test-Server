@@ -10,7 +10,6 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import requests
 
-# 1. GAWIN MUNA ANG APP DITO
 app = Flask(__name__)
 CORS(app)
 
@@ -44,7 +43,6 @@ def get_db_connection(db_type="injector"):
     return psycopg2.connect(url)
 
 
-# 2. INIT_DB FUNCTION
 def init_db():
     try:
         conn = get_db_connection("injector")
@@ -114,7 +112,7 @@ def send_telegram_alert(message: str):
 
 
 def format_remaining(expiry_timestamp):
-    if expiry_timestamp == 0 or expiry_timestamp > 32503680000: # Lifetime
+    if expiry_timestamp == 0 or expiry_timestamp > 32503680000:
         return "Lifetime"
     
     diff = expiry_timestamp - time.time()
@@ -300,13 +298,14 @@ def handle_customkey(db_type):
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 def handle_verify(db_type):
     try:
         cleanup()
         key = request.args.get("key")
         device = request.args.get("device")
         if not key or not device:
-            return jsonify({"status": "invalid", "message": "Missing key or device"}}, 400
+            return jsonify({"status": "invalid", "message": "Missing key or device"}), 400
 
         conn = get_db_connection(db_type)
         cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -329,7 +328,6 @@ def handle_verify(db_type):
         chat_id = link_data["chat_id"]
         stored_user = link_data["telegram_user"]
 
-        # Kuhanin ang totoong kasalukuyang username mula sa Telegram API
         current_telegram_user = stored_user
         try:
             url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getChat?chat_id={chat_id}"
@@ -341,7 +339,6 @@ def handle_verify(db_type):
         except Exception:
             pass
 
-        # Kung nag-iba ang username sa Telegram, burahin ang link para mapilitang mag-re-register!
         if current_telegram_user != stored_user:
             cur.execute("DELETE FROM device_links WHERE device_id = %s;", (device,))
             conn.commit()
@@ -366,7 +363,6 @@ def handle_verify(db_type):
         raw_message = data.get("message")
         custom_message = str(raw_message).strip() if raw_message else ""
 
-        # 1. Custom Message Triggered
         if custom_message != "":
             cur.close()
             conn.close()
@@ -383,7 +379,6 @@ def handle_verify(db_type):
             )
             return jsonify({"status": "custom", "message": custom_message})
 
-        # 2. Key Revoked Attempt
         if data["revoked"]:
             cur.close()
             conn.close()
@@ -400,7 +395,6 @@ def handle_verify(db_type):
             )
             return jsonify({"status": "revoked"})
 
-        # 3. Key Expired Attempt
         now = time.time()
         if now > data["expiry"]:
             cur.close()
@@ -432,7 +426,6 @@ def handle_verify(db_type):
                 "telegram_user": telegram_user
             })
 
-        # 4. Login Successful (Existing Device)
         if device in current_devices:
             cur.close()
             conn.close()
@@ -452,7 +445,6 @@ def handle_verify(db_type):
             )
             return success_response()
 
-        # 5. Login Successful (New Device Slot)
         if len(current_devices) < max_allowed:
             current_devices.append(device)
             new_device_string = ",".join(current_devices)
@@ -480,7 +472,6 @@ def handle_verify(db_type):
             )
             return success_response()
 
-        # 6. Max Device Limit Reached
         cur.close()
         conn.close()
         send_telegram_alert(
@@ -506,7 +497,8 @@ def handle_verify(db_type):
             "status": "error",
             "message": f"Server Exception: {str(e)}"
         }), 500
-        
+
+
 def handle_revoke(db_type):
     key = request.args.get("key")
     if not key:
@@ -521,7 +513,8 @@ def handle_revoke(db_type):
         return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-        
+
+
 def handle_unrevoke(db_type):
     key = request.args.get("key")
     if not key:
@@ -553,6 +546,7 @@ def handle_reset(db_type):
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 @app.route("/reset-all-keys", methods=["GET"])
 def handle_reset_all():
     try:
@@ -565,6 +559,7 @@ def handle_reset_all():
         return jsonify({"status": "success", "message": "All keys have been reset successfully!"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 def handle_list(db_type):
     try:
@@ -608,7 +603,6 @@ def handle_delete(db_type):
         return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
 
 def handle_stats(db_type):
     try:
