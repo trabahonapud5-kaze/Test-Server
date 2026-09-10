@@ -356,17 +356,19 @@ def handle_verify(db_type):
 
        # ---- ILAGAY DITO ANG HELPER LOGIC ----
         if telegram_user.startswith("tg://"):
-            # Kunin ang mismong user ID
+            # Para sa mga walang username (tg:// link ang nasa DB)
             user_id_num = telegram_user.split("=")[-1]
-            # Ang User Login ay clickable (Open Chat), ang User ID sa ibaba ay naka-mono para copy-ready
             user_line = (
                 f"👤 User Login: [Open Chat](tg://openmessage?user_id={user_id_num})\n"
-                f"🆔 User ID: `{user_id_num}`"
+                f"┃  🆔 User ID: `{user_id_num}`"
             )
         else:
-            # Linisin muna ang @ kung meron man para sa username
+            # Para sa mga may username (linisin muna ang @)
             clean_username = telegram_user.lstrip('@')
-            user_line = f"👤 User Login: [@{clean_username}](https://t.me/{clean_username})"
+            user_line = (
+                f"👤 User Login: [@{clean_username}](https://t.me/{clean_username})\n"
+                f"┃  🆔 User: @{clean_username}"
+            )
         # ---------------------------------------
         
         cur.execute("SELECT * FROM keys WHERE key_code = %s;", (key,))
