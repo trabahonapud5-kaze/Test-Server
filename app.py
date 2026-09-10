@@ -329,29 +329,30 @@ def handle_verify(db_type):
         chat_id = link_data["chat_id"]
         stored_user = link_data["telegram_user"]
 
-        current_telegram_user = stored_user
+        # I-normalize ang stored user para sa paghahambing (tanggalin ang @ at gawing lowercase)
+        normalized_stored = stored_user.lstrip('@').lower() if stored_user else ""
+        current_telegram_user = normalized_stored
+
         try:
             url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getChat?chat_id={chat_id}"
             resp = requests.get(url, timeout=3).json()
             if resp.get("ok"):
                 live_user = resp["result"].get("username")
                 if live_user:
-                    current_telegram_user = live_user
+                    current_telegram_user = live_user.lstrip('@').lower()
         except Exception:
             pass
 
-        if current_telegram_user != stored_user:
-            cur.execute("DELETE FROM device_links WHERE device_id = %s;", (device,))
-            conn.commit()
-            cur.close()
-            conn.close()
-            return jsonify({
-                "status": "link_required",
-                "message": "Username changed! Please re-link your Telegram.",
-                "bot_url": bot_link
-            })
+        # Kung hindi nagsisimula sa tg:// (ibig sabihin ay may username siya dati)
+        if not stored_user.startswith("tg://"):
+            # Kung nagbago ang username, i-update na lang sa database sa halip na i-delete
+            if current_telegram_user != normalized_stored and 'live_user' in locals() and live_user:
+                new_identifier = f"@{live_user}"
+                cur.execute("UPDATE device_links SET telegram_user = %s WHERE device_id = %s;", (new_identifier, device))
+                conn.commit()
+                stored_user = new_identifier
 
-        telegram_user = current_telegram_user
+        telegram_user = stored_user
 
         # ---- ILAGAY DITO ANG HELPER LOGIC ----
         if telegram_user.startswith("tg://"):
