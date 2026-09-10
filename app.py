@@ -10,6 +10,7 @@ from flask_cors import CORS
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import requests
+from datetime import datetime, timezone, timedelta
 
 app = Flask(__name__)
 CORS(app)
@@ -880,8 +881,9 @@ def register_bot():
                     print(f"Link error: {e}")
                     total_count = 1
 
-                # Oras ngayon (Philippine format: September 10, 2026 — 4:38 PM)
-                current_time_str = datetime.now().strftime("%B %d, %Y — %I:%M %p")
+                ph_time = datetime.now(timezone(timedelta(hours=8)))
+                current_time_str = ph_time.strftime("%B %d, %Y — %I:%M %p")
+                
 
                 # Admin Notification Format
                 send_register_alert(
