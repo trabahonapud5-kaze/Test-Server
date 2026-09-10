@@ -705,34 +705,37 @@ def unregister_bot_user():
     if not identifier:
         return {"status": "error", "message": "Missing identifier"}, 400
 
-    # Kung numero lang ang binigay (walang @), ibig sabihin ito ay User ID
-    if identifier.isdigit():
-        search_pattern = f"%user_id={identifier}%"
-    else:
-        if identifier.startswith("@"):
-            identifier = identifier[1:]
-        search_pattern = identifier
-
     try:
         conn = get_db_connection('injector')
         cur = conn.cursor()
         
-        # Kung digit, gagamit ng LIKE para mahanap sa loob ng tg:// link, kung hindi ay ILIKE para sa username
         if identifier.isdigit():
-            cur.execute("DELETE FROM device_links WHERE telegram_user LIKE %s;", (search_pattern,))
+            # Kung ang binigay ay puro numero (User ID), hahanapin nito sa tg:// format o eksaktong ID
+            link_pattern = f"%user_id={identifier}%"
+            cur.execute(
+                "DELETE FROM device_links WHERE telegram_user LIKE %s OR telegram_user = %s;", 
+                (link_pattern, identifier)
+            )
         else:
-            cur.execute("DELETE FROM device_links WHERE telegram_user ILIKE %s;", (search_pattern,))
+            # Kung ito ay username, tatanggalin muna ang '@' kung meron man para sigurado
+            clean_username = identifier.lstrip('@')
+            username_pattern = f"%{clean_username}%"
+            
+            # Hahanapin nito pati na rin ang mga nakatagong tg:// o may @ sa database
+            cur.execute(
+                "DELETE FROM device_links WHERE telegram_user ILIKE %s OR telegram_user ILIKE %s;", 
+                (username_pattern, f"@{clean_username}")
+            )
             
         conn.commit()
-        
         deleted_rows = cur.rowcount
         cur.close()
         conn.close()
         
         if deleted_rows > 0:
-            return {"status": "success", "message": f"User {identifier} unlinked successfully."}
+            return {"status": "success", "message": f"User '{identifier}' unlinked successfully. Total deleted: {deleted_rows}"}
         else:
-            return {"status": "error", "message": "User/Device not found in database."}, 404
+            return {"status": "error", "message": f"User or Device with identifier '{identifier}' not found in database."}, 404
             
     except Exception as e:
         return {"status": "error", "message": str(e)}, 500
