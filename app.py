@@ -356,12 +356,13 @@ def handle_verify(db_type):
 
        # ---- ILAGAY DITO ANG HELPER LOGIC ----
         if telegram_user.startswith("tg://"):
-            # Kung buong link ang gusto mong lumabas sa alert
-            user_line = f"👤 User Login: `{telegram_user}`"
+            # Kunin ang mismong user ID para mai-format natin bilang clickable link
+            user_id_num = telegram_user.split("=")[-1]
+            user_line = f"👤 User Login: [Open Chat](tg://openmessage?user_id={user_id_num})"
         else:
             # Linisin muna ang @ kung meron man para hindi maging doble
             clean_username = telegram_user.lstrip('@')
-            user_line = f"👤 User Login: @{clean_username}"
+            user_line = f"👤 User Login: [@{clean_username}](https://t.me/{clean_username})"
         # ---------------------------------------
         
         cur.execute("SELECT * FROM keys WHERE key_code = %s;", (key,))
