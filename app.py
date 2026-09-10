@@ -353,6 +353,13 @@ def handle_verify(db_type):
 
         telegram_user = current_telegram_user
 
+        # ---- ILAGAY DITO ANG HELPER LOGIC ----
+        if telegram_user.startswith("tg://"):
+            user_line = f"👤 User Login:\n{telegram_user}"
+        else:
+            user_line = f"👤 User Login: @{telegram_user}"
+        # ---------------------------------------
+
         cur.execute("SELECT * FROM keys WHERE key_code = %s;", (key,))
         data = cur.fetchone()
 
@@ -374,7 +381,7 @@ def handle_verify(db_type):
                 f"┃  🔑 Key: `{key}`\n"
                 f"┃  💬 Message: {custom_message}\n"
                 f"┃  ━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"┃  👤 User Login: @{telegram_user}\n"
+                f"┃  {user_line}\n"
                 f"┃  ⚡ 𝗠𝗘𝗦𝗦𝗔𝗚𝗘 𝗧𝗥𝗜𝗚𝗚𝗘𝗥𝗘𝗗\n"
                 f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             )
@@ -390,7 +397,7 @@ def handle_verify(db_type):
                 f"┃  🔑 Key: `{key}`\n"
                 f"┃  📱 Device: {device}\n"
                 f"┃  ━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"┃  👤 User Login: @{telegram_user}\n"
+                f"┃  {user_line}\n"
                 f"┃  🔴 𝗔𝗖𝗖𝗘𝗦𝗦 𝗗𝗘𝗡𝗜𝗘𝗗\n"
                 f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             )
@@ -407,7 +414,7 @@ def handle_verify(db_type):
                 f"┃  🔑 Key: `{key}`\n"
                 f"┃  📱 Device: {device}\n"
                 f"┃  ━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"┃  👤 User Login: @{telegram_user}\n"
+                f"┃  {user_line}\n"
                 f"┃  🔴 𝗔𝗖𝗖𝗘𝗦𝗦 𝗗𝗘𝗡𝗜𝗘𝗗\n"
                 f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             )
@@ -440,7 +447,7 @@ def handle_verify(db_type):
                 f"┃  📱 Device: {device}\n"
                 f"┃  ⏳ Expires in: {time_left_str}\n"
                 f"┃  ━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"┃  👤 User Login: @{telegram_user}\n"
+                f"┃  {user_line}\n"
                 f"┃  🟢 𝗔𝗖𝗖𝗘𝗦𝗦 𝗚𝗥𝗔𝗡𝗧𝗘𝗗\n"
                 f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             )
@@ -467,7 +474,7 @@ def handle_verify(db_type):
                 f"┃  📱 Device: {device}\n"
                 f"┃  ⏳ Expires in: {time_left_str}\n"
                 f"┃  ━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"┃  👤 User Login: @{telegram_user}\n"
+                f"┃  {user_line}\n"
                 f"┃  🟢 𝗔𝗖𝗖𝗘𝗦𝗦 𝗚𝗥𝗔𝗡𝗧𝗘𝗗\n"
                 f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             )
@@ -483,7 +490,7 @@ def handle_verify(db_type):
             f"┃  📱 Attempt Device: {device}\n"
             f"┃  💻 Device Slots: {len(current_devices)}/{max_allowed}\n"
             f"┃  ━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"┃  👤 User Login: @{telegram_user}\n"
+            f"┃  {user_line}\n"
             f"┃  🔴 𝗔𝗖𝗖𝗘𝗦𝗦 𝗗𝗘𝗡𝗜𝗘𝗗\n"
             f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         )
@@ -771,8 +778,8 @@ def clear_devices():
         return "SUCCESS: Lahat ng device links ay nabura na!"
     except Exception as e:
         return f"Error: {e}", 500
-        
-@app.route('/telegram_webhook', methods=['POST'])
+
+    @app.route('/telegram_webhook', methods=['POST'])
 def telegram_bot():
     data = request.json
     if not data:
@@ -785,10 +792,13 @@ def telegram_bot():
         user_info = msg.get("from", {})
         
         username = user_info.get("username")
-        if not username:
-            first_name = user_info.get("first_name", "User")
-            user_id = user_info.get("id")
-            username = f"{first_name}_{user_id}"
+        user_id = user_info.get("id")
+        
+        # PRIORITY LOGIC: Username kung meron, tg:// link kung wala
+        if username:
+            telegram_identifier = f"@{username}"
+        else:
+            telegram_identifier = f"tg://openmessage?user_id={user_id}"
 
         if msg_text.startswith("/start"):
             parts = msg_text.split(" ")
@@ -804,7 +814,7 @@ def telegram_bot():
                         VALUES (%s, %s, %s, %s)
                         ON CONFLICT (device_id) 
                         DO UPDATE SET chat_id = EXCLUDED.chat_id, telegram_user = EXCLUDED.telegram_user, linked_at = EXCLUDED.linked_at;
-                    """, (device_id, chat_id, username, time.time()))
+                    """, (device_id, chat_id, telegram_identifier, time.time()))
                     conn.commit()
                     cur.close()
                     conn.close()
