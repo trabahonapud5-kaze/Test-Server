@@ -311,20 +311,29 @@ def handle_verify(db_type):
         conn = get_db_connection(db_type)
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
-        cur.execute("SELECT telegram_user FROM device_links WHERE device_id = %s;", (device,))
+        cur.execute("SELECT * FROM device_links WHERE device_id = %s;", (device,))
         link_data = cur.fetchone()
-        telegram_user = link_data["telegram_user"] if link_data else "Unknown"
+
+        bot_username = "CodmInjCheckingbot" # Palitan mo ng username ng bot mo kung iba
+        bot_link = f"https://t.me/{bot_username}?start={device}"
 
         if not link_data or not link_data.get("telegram_user"):
             cur.close()
             conn.close()
-            bot_username = "CodmInjCheckingbot"
-            bot_link = f"https://t.me/{bot_username}?start={device}"
             return jsonify({
                 "status": "link_required",
                 "message": "Please start the Telegram bot first!",
                 "bot_url": bot_link
             })
+
+        stored_user = link_data["telegram_user"]
+        
+        # Opsyonal: Kung gusto mo silang pilitin mag-re-register kapag binago nila, 
+        # pwede nating burahin ang link kapag humingi sila ng verification habang binabago natin ang flow,
+        # Pero ang pinaka-safe ay i-reset ang link kung sakaling gusto mo silang mag-re-register:
+        # (Para dito, kapag binago nila ang username sa telegram, hihingi tayo ng bagong /start)
+        
+        telegram_user = stored_user
 
         cur.execute("SELECT * FROM keys WHERE key_code = %s;", (key,))
         data = cur.fetchone()
