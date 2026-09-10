@@ -52,9 +52,9 @@ def init_db():
         cur.execute("""
             ALTER TABLE keys ADD COLUMN IF NOT EXISTS message TEXT DEFAULT NULL;
             
-            -- Table para sa pag-uugnay ng device ID sa Telegram username/ID
             CREATE TABLE IF NOT EXISTS device_links (
                 device_id TEXT PRIMARY KEY,
+                chat_id BIGINT,
                 telegram_user TEXT,
                 linked_at REAL
             );
@@ -62,7 +62,7 @@ def init_db():
         conn.commit()
         cur.close()
         conn.close()
-        print("Database initialized successfully: message and device_links checked/added.")
+        print("Database initialized successfully.")
     except Exception as e:
         print(f"Database init error: {e}")
 
@@ -306,7 +306,7 @@ def handle_verify(db_type):
         key = request.args.get("key")
         device = request.args.get("device")
         if not key or not device:
-            return jsonify({"status": "invalid", "message": "Missing key or device"}), 400
+            return jsonify({"status": "invalid", "message": "Missing key or device"}}, 400
 
         conn = get_db_connection(db_type)
         cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -314,10 +314,10 @@ def handle_verify(db_type):
         cur.execute("SELECT * FROM device_links WHERE device_id = %s;", (device,))
         link_data = cur.fetchone()
 
-        bot_username = "CodmInjCheckingbot" # Palitan mo ng username ng bot mo kung iba
+        bot_username = "CodmInjCheckingbot"
         bot_link = f"https://t.me/{bot_username}?start={device}"
 
-        if not link_data or not link_data.get("telegram_user"):
+        if not link_data or not link_data.get("chat_id"):
             cur.close()
             conn.close()
             return jsonify({
@@ -326,14 +326,34 @@ def handle_verify(db_type):
                 "bot_url": bot_link
             })
 
+        chat_id = link_data["chat_id"]
         stored_user = link_data["telegram_user"]
-        
-        # Opsyonal: Kung gusto mo silang pilitin mag-re-register kapag binago nila, 
-        # pwede nating burahin ang link kapag humingi sila ng verification habang binabago natin ang flow,
-        # Pero ang pinaka-safe ay i-reset ang link kung sakaling gusto mo silang mag-re-register:
-        # (Para dito, kapag binago nila ang username sa telegram, hihingi tayo ng bagong /start)
-        
-        telegram_user = stored_user
+
+        # Kuhanin ang totoong kasalukuyang username mula sa Telegram API
+        current_telegram_user = stored_user
+        try:
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getChat?chat_id={chat_id}"
+            resp = requests.get(url, timeout=3).json()
+            if resp.get("ok"):
+                live_user = resp["result"].get("username")
+                if live_user:
+                    current_telegram_user = live_user
+        except Exception:
+            pass
+
+        # Kung nag-iba ang username sa Telegram, burahin ang link para mapilitang mag-re-register!
+        if current_telegram_user != stored_user:
+            cur.execute("DELETE FROM device_links WHERE device_id = %s;", (device,))
+            conn.commit()
+            cur.close()
+            conn.close()
+            return jsonify({
+                "status": "link_required",
+                "message": "Username changed! Please re-link your Telegram.",
+                "bot_url": bot_link
+            })
+
+        telegram_user = current_telegram_user
 
         cur.execute("SELECT * FROM keys WHERE key_code = %s;", (key,))
         data = cur.fetchone()
@@ -785,11 +805,11 @@ def telegram_bot():
                     conn = get_db_connection(db_type)
                     cur = conn.cursor()
                     cur.execute("""
-                        INSERT INTO device_links (device_id, telegram_user, linked_at)
-                        VALUES (%s, %s, %s)
+                        INSERT INTO device_links (device_id, chat_id, telegram_user, linked_at)
+                        VALUES (%s, %s, %s, %s)
                         ON CONFLICT (device_id) 
-                        DO UPDATE SET telegram_user = EXCLUDED.telegram_user, linked_at = EXCLUDED.linked_at;
-                    """, (device_id, username, time.time()))
+                        DO UPDATE SET chat_id = EXCLUDED.chat_id, telegram_user = EXCLUDED.telegram_user, linked_at = EXCLUDED.linked_at;
+                    """, (device_id, chat_id, username, time.time()))
                     conn.commit()
                     cur.close()
                     conn.close()
