@@ -51,16 +51,17 @@ def init_db():
             ALTER TABLE keys ADD COLUMN IF NOT EXISTS message TEXT DEFAULT NULL;
             
             CREATE TABLE IF NOT EXISTS device_links (
-                device_id TEXT PRIMARY KEY,
-                chat_id BIGINT,
-                telegram_user TEXT,
-                linked_at REAL
+                device_id TEXT PRIMARY KEY
             );
+            
+            ALTER TABLE device_links ADD COLUMN IF NOT EXISTS chat_id BIGINT;
+            ALTER TABLE device_links ADD COLUMN IF NOT EXISTS telegram_user TEXT;
+            ALTER TABLE device_links ADD COLUMN IF NOT EXISTS linked_at REAL;
         """)
         conn.commit()
         cur.close()
         conn.close()
-        print("Database initialized successfully.")
+        print("Database initialized and updated successfully.")
     except Exception as e:
         print(f"Database init error: {e}")
 
