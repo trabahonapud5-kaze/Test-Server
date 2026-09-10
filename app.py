@@ -355,7 +355,8 @@ def handle_verify(db_type):
 
         # ---- ILAGAY DITO ANG HELPER LOGIC ----
         if telegram_user.startswith("tg://"):
-            user_line = f"👤 User Login:\n{telegram_user}"
+            user_id_num = telegram_user.split("=")[-1]
+            user_line = f"👤 User Login ID: `{user_id_num}`"
         else:
             user_line = f"👤 User Login: @{telegram_user}"
         # ---------------------------------------
