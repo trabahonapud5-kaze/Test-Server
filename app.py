@@ -4,6 +4,7 @@ import string
 import time
 import uuid
 import traceback
+from datetime import datetime
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import psycopg2
@@ -334,7 +335,6 @@ def handle_verify(db_type):
         cur.execute("SELECT * FROM device_links WHERE device_id = %s;", (device,))
         link_data = cur.fetchone()
 
-        # Dito nakaturo sa bagong bot ang verification/linking link kapag wala pa sila nito
         bot_username = "KazeRegisterBot"
         bot_link = f"https://t.me/{bot_username}?start={device}"
 
@@ -596,6 +596,7 @@ def handle_reset_all():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 def handle_list(db_type):
     try:
         status_filter = request.args.get("status", "active")
@@ -805,7 +806,7 @@ def set_message():
         conn.close()
         return jsonify({"status": "success", "message": "Custom message updated successfully!"})
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}, 500)
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/admin/clear_devices", methods=["GET"])
 def clear_devices():
@@ -838,14 +839,13 @@ def register_bot():
         
         username = user_info.get("username")
         user_id = user_info.get("id")
-        first_name = user_info.get("first_name", "User")
         
         if username:
             telegram_identifier = f"@{username}"
-            display_user = f"[@{username}](https://t.me/{username})"
+            display_username = f"@{username}"
         else:
             telegram_identifier = f"tg://openmessage?user_id={user_id}"
-            display_user = f"[Open Chat](tg://openmessage?user_id={user_id})\n┃  🆔 User ID: `{user_id}`"
+            display_username = f"ID: {user_id}"
 
         if msg_text.startswith("/start"):
             parts = msg_text.split(" ")
@@ -856,27 +856,72 @@ def register_bot():
                 try:
                     conn = get_db_connection(db_type)
                     cur = conn.cursor()
+                    
+                    # I-check muna kung bagong device ba ito o nag-update lang
+                    cur.execute("SELECT 1 FROM device_links WHERE device_id = %s;", (device_id,))
+                    exists = cur.fetchone()
+                    
+                    # I-save o i-update sa database
                     cur.execute("""
                         INSERT INTO device_links (device_id, chat_id, telegram_user, linked_at)
                         VALUES (%s, %s, %s, %s)
                         ON CONFLICT (device_id) 
                         DO UPDATE SET chat_id = EXCLUDED.chat_id, telegram_user = EXCLUDED.telegram_user, linked_at = EXCLUDED.linked_at;
                     """, (device_id, chat_id, telegram_identifier, time.time()))
+                    
+                    # Kunin ang total count ng mga naka-register
+                    cur.execute("SELECT COUNT(*) FROM device_links;")
+                    total_count = cur.fetchone()[0]
+                    
                     conn.commit()
                     cur.close()
                     conn.close()
                 except Exception as e:
                     print(f"Link error: {e}")
+                    total_count = 1
 
-                # Magpapadala ng notification sa bagong bot mo papunta sa private chat mo
+                # Oras ngayon (Philippine format: September 10, 2026 — 4:38 PM)
+                current_time_str = datetime.now().strftime("%B %d, %Y — %I:%M %p")
+
+                # Admin Notification Format
                 send_register_alert(
-                    f"NEW TELEGRAM REGISTER:\n"
-                    f"USERNAME: {display_user}\n"
-                    f"USER ID: `{user_id}`\n"
-                    f"Device ID: `{device_id}`"
+                    f"╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n"
+                    f"┃     ⚠️ 𝗡𝗘𝗪 𝗥𝗘𝗚𝗜𝗦𝗧𝗥𝗔𝗧𝗜𝗢𝗡 𝗔𝗟𝗘𝗥𝗧\n"
+                    f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n"
+                    f"📊 𝗥𝗘𝗚𝗜𝗦𝗧𝗥𝗔𝗧𝗜𝗢𝗡 𝗖𝗢𝗨𝗡𝗧\n"
+                    f"• Total Registrations: {total_count}\n"
+                    f"• New Registration: +1\n\n"
+                    f"👤 𝗨𝗦𝗘𝗥 𝗗𝗘𝗧𝗔𝗜𝗟𝗦\n"
+                    f"• Username: {display_username}\n"
+                    f"• User ID: {user_id}\n\n"
+                    f"📱 𝗗𝗘𝗩𝗜𝗖𝗘 𝗗𝗘𝗧𝗔𝗜𝗟𝗦\n"
+                    f"• Device ID: `{device_id}`\n\n"
+                    f"🕐 𝗥𝗘𝗚𝗜𝗦𝗧𝗥𝗔𝗧𝗜𝗢𝗡 𝗧𝗜𝗠𝗘\n"
+                    f"• {current_time_str}\n\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"✅ 𝗦𝗧𝗔𝗧𝗨𝗦\n"
+                    f"Registration successfully received.\n\n"
+                    f"🤖 𝗔𝗨𝗧𝗢𝗠𝗔𝗧𝗘𝗗 𝗡𝗢𝗧𝗜𝗙𝗜𝗖𝗔𝗧𝗜𝗢𝗡"
                 )
             
-            reply_text = "Success! Naka-register na ang iyong device."
+            # User Success Reply Format
+            reply_text = (
+                "╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n"
+                "┃     ✅ 𝗥𝗘𝗚𝗜𝗦𝗧𝗘𝗥 𝗦𝗨𝗖𝗖𝗘𝗦𝗦‼️\n"
+                "╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n"
+                "🎉 Your registration has been completed successfully!\n"
+                "✨ You're all set and ready to continue.\n\n"
+                "📱 𝗡𝗘𝗫𝗧 𝗦𝗧𝗘𝗣𝗦 Return to the Codm Injector and tap:\n"
+                "↻ 𝗖𝗛𝗘𝗖𝗞 𝗦𝗧𝗔𝗧𝗨𝗦\n\n"
+                "⚠️ 𝗔𝗖𝗧𝗜𝗢𝗡 𝗥𝗘𝗤𝗨𝗜𝗥𝗘𝗗\n"
+                "Please tap CHECK STATUS to confirm your registration\n"
+                "and continue using the injector.\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                "💬 𝗡𝗘𝗘𝗗 𝗛𝗘𝗟𝗣?\n"
+                "For questions or assistance, contact:\n"
+                "📩 @KAZEHAYAMODZ"
+            )
+            
             url = f"https://api.telegram.org/bot{REGISTER_BOT_TOKEN}/sendMessage"
             payload = {
                 "chat_id": chat_id,
