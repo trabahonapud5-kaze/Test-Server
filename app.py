@@ -779,7 +779,7 @@ def clear_devices():
     except Exception as e:
         return f"Error: {e}", 500
 
-    @app.route('/telegram_webhook', methods=['POST'])
+@app.route('/telegram_webhook', methods=['POST'])
 def telegram_bot():
     data = request.json
     if not data:
