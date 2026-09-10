@@ -359,9 +359,11 @@ def handle_verify(db_type):
             user_id_num = telegram_user.split("=")[-1]
             user_line = f"👤 User Login ID: `{user_id_num}`"
         else:
-            user_line = f"👤 User Login: @{telegram_user}"
+            # Linisin muna ang @ kung meron man para hindi maging doble
+            clean_username = telegram_user.lstrip('@')
+            user_line = f"👤 User Login: @{clean_username}"
         # ---------------------------------------
-
+        
         cur.execute("SELECT * FROM keys WHERE key_code = %s;", (key,))
         data = cur.fetchone()
 
